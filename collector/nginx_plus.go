@@ -38,6 +38,7 @@ type NginxPlusCollector struct {
 	streamUpstreamServerMetrics    map[string]*prometheus.Desc
 	locationZoneMetrics            map[string]*prometheus.Desc
 	resolverMetrics                map[string]*prometheus.Desc
+	limitZoneMetrics               map[string]*prometheus.Desc
 	upMetric                       prometheus.Gauge
 	mutex                          sync.Mutex
 	variableLabelNames             VariableLabelNames
@@ -336,6 +337,11 @@ func NewNginxPlusCollector(nginxClient *plusclient.NginxClient, namespace string
 			"refused":  newResolverMetric(namespace, "refused", "Total number of REFUSED responses", constLabels),
 			"timedout": newResolverMetric(namespace, "timedout", "Total number of timed out requests", constLabels),
 			"unknown":  newResolverMetric(namespace, "unknown", "Total requests completed with an unknown error", constLabels),
+		},
+		limitZoneMetrics: map[string]*prometheus.Desc{
+			"passed":   newLimitReqZoneMetric(namespace, "passed", "Total requests that passed by the limit request zone", constLabels),
+			"delayed":  newLimitReqZoneMetric(namespace, "delayed", "Total requests that are delayed by limit request zone", constLabels),
+			"rejected": newLimitReqZoneMetric(namespace, "rejected", "Total requests that are rejected by limit request zone", constLabels),
 		},
 		upMetric: newUpMetric(namespace, constLabels),
 	}
@@ -676,6 +682,15 @@ func (c *NginxPlusCollector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(c.resolverMetrics["unknown"],
 			prometheus.CounterValue, float64(zone.Responses.Unknown), name)
 	}
+
+	for name, zone := range stats.LimitReqZones {
+		ch <- prometheus.MustNewConstMetric(c.limitZoneMetrics["passed"],
+			prometheus.CounterValue, float64(zone.Passed), name)
+		ch <- prometheus.MustNewConstMetric(c.limitZoneMetrics["delayed"],
+			prometheus.CounterValue, float64(zone.Delayed), name)
+		ch <- prometheus.MustNewConstMetric(c.limitZoneMetrics["rejected"],
+			prometheus.CounterValue, float64(zone.Rejected), name)
+	}
 }
 
 var upstreamServerStates = map[string]float64{
@@ -734,3 +749,11 @@ func newLocationZoneMetric(namespace string, metricName string, docString string
 func newResolverMetric(namespace string, metricName string, docString string, constLabels prometheus.Labels) *prometheus.Desc {
 	return prometheus.NewDesc(prometheus.BuildFQName(namespace, "resolver", metricName), docString, []string{"resolver"}, constLabels)
 }
+
+func newLimitReqZoneMetric(namespace string, metricName string, docString string, constLabels prometheus.Labels) *prometheus.Desc {
+	return prometheus.NewDesc(prometheus.BuildFQName(namespace, "limit_req_zone", metricName), docString, []string{"limit_req_zone"}, constLabels)
+}
+
+var (
+	_ LabelUpdater = &NginxPlusCollector{}
+)
